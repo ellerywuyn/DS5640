@@ -1,0 +1,247 @@
+---
+title: "Homework_4"
+author: "Yuning Wu"
+date: "2023-02-26"
+output: github_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library('MASS') ## for 'mcycle'
+library(ggplot2)
+library('caret')
+```
+
+1. 
+```{r}
+set.seed(1)
+
+# 75% 25%
+sample <- sample(c(TRUE, FALSE), nrow(mcycle), replace=TRUE, prob=c(0.75,0.25))
+train  <- mcycle[sample, ]
+test   <- mcycle[!sample, ]
+```
+
+2. 
+```{r}
+## Make predictions using the NW method
+## y  - n x 1 vector of training outputs
+## x  - n x p matrix of training inputs
+## x0 - m x p matrix where to make predictions
+## kern  - kernel function to use
+## ... - arguments to pass to kernel function
+nadaraya_watson <- function(y, x, x0, kern, ...) {
+  k <- t(apply(x0, 1, function(x0_) {
+    k_ <- kern(x, x0_, ...)
+    k_/sum(k_)
+  }))
+  yhat <- drop(k %*% y)
+  attr(yhat, 'k') <- k
+  return(yhat)
+}
+
+## k-NN kernel function
+## x  - n x p matrix of training inputs
+## x0 - 1 x p input where to make prediction
+## k  - number of nearest neighbors
+kernel_k_nearest_neighbors <- function(x, x0, k=1) {
+  ## compute distance betwen each x and x0
+  z <- t(t(x) - x0)
+  d <- sqrt(rowSums(z*z))
+
+  ## initialize kernel weights to zero
+  w <- rep(0, length(d))
+  
+  ## set weight to 1 for k nearest neighbors
+  w[order(d)[1:k]] <- 1
+  
+  return(w)
+}
+
+x_train <- matrix(train$times, length(train$times), 1)
+x_test <- matrix(test$times, length(test$times), 1)
+y_train <- train$accel
+y_test <- test$accel
+```
+
+```{r}
+## Compute effective df using NW method
+## y  - n x 1 vector of training outputs
+## x  - n x p matrix of training inputs
+## kern  - kernel function to use
+## ... - arguments to pass to kernel function
+effective_df <- function(y, x, kern, ...) {
+  y_hat <- nadaraya_watson(y, x, x,
+    kern=kern, ...)
+  sum(diag(attr(y_hat, 'k')))
+}
+
+## loss function
+## y    - train/test y
+## yhat - predictions at train/test x
+loss_squared_error <- function(y, yhat)
+  (y - yhat)^2
+
+## test/train error
+## y    - train/test y
+## yhat - predictions at train/test x
+## loss - loss function
+error <- function(y, yhat, loss=loss_squared_error)
+  mean(loss(y, yhat))
+
+## AIC
+## y    - training y
+## yhat - predictions at training x
+## d    - effective degrees of freedom
+aic <- function(y, yhat, d)
+  error(y, yhat) + 2/length(y)*d
+
+## BIC
+## y    - training y
+## yhat - predictions at training x
+## d    - effective degrees of freedom
+bic <- function(y, yhat, d)
+  error(y, yhat) + log(length(y))/length(y)*d
+```
+
+```{r}
+k_seq <- seq(1, 20, by = 1)
+
+train_error <- rep(0, length(k_seq))
+test_error <- rep(0, length(k_seq))
+edf <- rep(0, length(k_seq))
+aic_list <- rep(0, length(k_seq))
+bic_list <- rep(0, length(k_seq))
+
+for (k in k_seq) {
+  y_hat_train <- nadaraya_watson(y_train, x_train, x_train, kern=kernel_k_nearest_neighbors, k=k)
+  train_error[k] <- error(y_train, y_hat_train)
+  
+  edf[k] <- effective_df(y_train, x_train, kern=kernel_k_nearest_neighbors, k=k)
+  aic_list[k] <- aic(y_train, y_hat_train, edf[k])
+  bic_list[k] <- bic(y_train, y_hat_train, edf[k])
+  
+  y_hat_test <- nadaraya_watson(y_train, x_train, x_test, kern=kernel_k_nearest_neighbors, k=k)
+  test_error[k] <- error(y_test, y_hat_test)
+}
+
+df <- data.frame(k = k_seq, train_error=train_error, edf=edf, aic_list=aic_list, bic_list=bic_list, test_error=test_error)
+```
+
+3.
+```{r}
+ggplot(df, aes(x = k)) +
+  geom_line(aes(y = train_error), color = "blue", size = 1) +
+  geom_line(aes(y = aic_list), color = "red", size = 1) +
+  geom_line(aes(y = bic_list), color = "green", size = 1) +
+  geom_line(aes(y = test_error), color = "orange", size = 1) +
+  scale_x_continuous(breaks = k_seq)+
+  labs(x = "Tuning Parameter (k)",
+       y = "Error",
+       title = "Nadaraya-Watson with k-NN Kernel",
+       subtitle = "blue is training error\nred is aic\ngreen is bic\norange is test error") +
+  theme(plot.title = element_text(hjust = 0.5, size = 16),
+        axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14))+
+  theme_minimal()
+```
+
+```{r}
+ggplot(df, aes(x = k)) +
+  geom_line(aes(y = train_error), color = "blue", size = 1) +
+  geom_line(aes(y = test_error), color = "orange", size = 1) +
+  scale_x_continuous(breaks = k_seq) +
+  labs(x = "Tuning Parameter (k)",
+       y = "Error",
+       title = "Nadaraya-Watson with k-NN Kernel",
+       subtitle = "blue is training error\norange is test error") +
+  theme(plot.title = element_text(hjust = 0.5, size = 16),
+        axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14))+
+  theme_minimal()
+```
+
+```{r}
+ggplot(df, aes(x = k)) +
+  geom_line(aes(y = aic_list), color = "red", size = 1) +
+  geom_line(aes(y = test_error), color = "orange", size = 1) +
+  scale_x_continuous(breaks = k_seq) +
+  labs(x = "Tuning Parameter (k)",
+       y = "Error",
+       title = "Nadaraya-Watson with k-NN Kernel",
+       subtitle = "red is aic\norange is test error") +
+  theme(plot.title = element_text(hjust = 0.5, size = 16),
+        axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14))+
+  theme_minimal()
+```
+
+```{r}
+ggplot(df, aes(x = k)) +
+  geom_line(aes(y = bic_list), color = "green", size = 1) +
+  geom_line(aes(y = test_error), color = "orange", size = 1) +
+  scale_x_continuous(breaks = k_seq) +
+  labs(x = "Tuning Parameter (k)",
+       y = "Error",
+       title = "Nadaraya-Watson with k-NN Kernel",
+       subtitle = "green is bic\norange is test error") +
+  theme(plot.title = element_text(hjust = 0.5, size = 16),
+        axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14))+
+  theme_minimal()
+```
+
+4. 
+```{r}
+## 5-fold cross-validation of knnreg model
+## create five folds
+set.seed(1985)
+mcycle_flds  <- createFolds(mcycle$accel, k=5)
+print(mcycle_flds)
+sapply(mcycle_flds, length)  ## not all the same length
+
+cvknnreg <- function(kNN = 10, flds=mcycle_flds) {
+  cverr <- rep(NA, length(flds))
+  for(tst_idx in 1:length(flds)) { ## for each fold
+    
+    ## get training and testing data
+    mycycle_trn <- mcycle[-flds[[tst_idx]],]
+    mycycle_tst <- mcycle[ flds[[tst_idx]],]
+    
+    ## fit kNN model to training data
+    knn_fit <- knnreg(accel ~ times,
+                      k=kNN, data=mycycle_trn)
+    
+    ## compute test error on testing data
+    pre_tst <- predict(knn_fit, mycycle_tst)
+    cverr[tst_idx] <- mean((mycycle_tst$accel - pre_tst)^2)
+  }
+  return(cverr)
+}
+
+## Compute 5-fold CV for kNN = 1:20
+cverrs <- sapply(1:20, cvknnreg)
+print(cverrs) ## rows are k-folds (1:5), cols are kNN (1:20)
+cverrs_mean <- apply(cverrs, 2, mean)
+cverrs_sd   <- apply(cverrs, 2, sd)
+```
+
+
+5.
+```{r}
+## Plot the results of 5-fold CV for kNN = 1:20
+plot(x=1:20, y=cverrs_mean, 
+     ylim=range(cverrs),
+     xlab="'k' in kNN", ylab="CV Estimate of Test Error")
+segments(x0=1:20, x1=1:20,
+         y0=cverrs_mean-cverrs_sd,
+         y1=cverrs_mean+cverrs_sd)
+best_idx <- which.min(cverrs_mean)
+points(x=best_idx, y=cverrs_mean[best_idx], pch=20)
+abline(h=cverrs_mean[best_idx] + cverrs_sd[best_idx], lty=3)
+```
+
+6.
+`k = 14` is the best parameter for the Nadaraya-Watson method with the k-NN kernel function according the parcemonain rule.
+
