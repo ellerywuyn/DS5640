@@ -1,0 +1,86 @@
+---
+title: "Homework_5"
+author: "Yuning Wu"
+date: "2023-04-04"
+output: github_document
+---
+
+```{r}
+library('randomForest')  ## fit random forest
+library('dplyr')    ## data manipulation
+library('magrittr') ## for '%<>%' operator
+library('gpairs')   ## pairs plot
+library('viridis')  ## viridis color palette
+library("tidyverse")
+library("caret")
+```
+
+```{r}
+vowel_train <- 
+  read_csv(url(
+    'https://hastie.su.domains/ElemStatLearn/datasets/vowel.train'))
+```
+
+```{r}
+vowel_train <- vowel_train %>% 
+  mutate(y = as.factor(y)) %>% 
+  select(- row.names)
+```
+
+```{r}
+fit <- randomForest(y ~ ., data=vowel_train)
+```
+
+```{r}
+set.seed(1985)
+vowel_flds  <- createFolds(vowel_train$y, k=5)
+print(vowel_flds)
+```
+
+```{r}
+sapply(vowel_flds, length)
+```
+
+
+```{r}
+cv_control <- trainControl(method = "cv", index = vowel_flds)
+
+# Define grid of hyperparameters to tune
+param_grid <- expand.grid(mtry = c(1:10))
+```
+
+```{r}
+model <- train(y ~ ., data = vowel_train, method = "rf",
+               tuneGrid = param_grid, trControl = cv_control)
+
+print(model)
+print(model$results)
+print(model$bestTune)
+plot(model)
+```
+
+```{r}
+vowel_test <- 
+  read_csv(url(
+    'https://hastie.su.domains/ElemStatLearn/datasets/vowel.test'))
+```
+
+```{r}
+vowel_test <- vowel_test %>% 
+  mutate(y = as.factor(y)) %>% 
+  select(- row.names)
+```
+
+
+```{r}
+preds <- predict(model, newdata = vowel_test)
+cm <- confusionMatrix(preds, vowel_test$y)
+cm
+```
+
+```{r}
+misclassification_rate <- 1- cm$overall["Accuracy"]
+cat("Misclassifcation rate = ", misclassification_rate)
+```
+
+
