@@ -1,0 +1,27 @@
+---
+title: "Homework_6"
+author: "Yuning Wu"
+date: "2023-04-06"
+output: github_document
+---
+
+```{r}
+library(keras)
+```
+
+```{r}
+remotes::install_github("hafen/rminiconda")
+rminiconda::install_miniconda(name='Yuning Wu')
+```
+```{r}
+py <- rminiconda::find_miniconda_python("Yuning Wu")
+reticulate::use_python(py, required = TRUE)
+```
+
+```{r}
+fashion_mnist <- dataset_fashion_mnist()
+
+c(train_images, train_labels) %<-% fashion_mnist$train
+c(test_images, test_labels) %<-% fashion_mnist$test
+```
+
